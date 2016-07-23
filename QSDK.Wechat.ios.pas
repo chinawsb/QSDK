@@ -1,11 +1,7 @@
 { ******************************************************* }
-{ }
-{ Delphi FireMonkey Platform }
-{ }
-{ Interfaces for libWeChatSDK 1.7.1 }
-{ }
-{ Copyright (c) 2016, TU2. All rights reserved. }
-{ }
+{ QSDK.Wechat.iOS 1.0                                     }
+{ Interfaces for libWeChatSDK 1.7.1                       }
+{ Created by TU2(Ticr),and agree to share with QSDK       }
 { ******************************************************* }
 
 unit QSDK.Wechat.ios;
