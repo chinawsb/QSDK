@@ -1,3 +1,9 @@
+{ ******************************************************* }
+{ QSDK.Wechat.iOS 1.0                                     }
+{ Interfaces for libWeChatSDK 1.7.1                       }
+{ Created by TU2(Ticr),and agree to share with QSDK       }
+{ ******************************************************* }
+
 {
     ±à¼­Æ÷ÔöÇ¿  by tutu (QQ: 245806497)
 }
