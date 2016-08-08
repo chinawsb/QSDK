@@ -1,7 +1,7 @@
 { ******************************************************* }
-{ QSDK.Wechat.iOS 1.0                                     }
-{ Interfaces for libWeChatSDK 1.7.1                       }
-{ Created by TU2(Ticr),and agree to share with QSDK       }
+{ QSDK.Wechat.iOS 1.0 }
+{ Interfaces for libWeChatSDK 1.7.1 }
+{ Created by TU2(Ticr),and agree to share with QSDK }
 { ******************************************************* }
 
 unit QSDK.Wechat.ios;
@@ -9,9 +9,11 @@ unit QSDK.Wechat.ios;
 interface
 
 uses
+  iOSapi.Foundation, FMX.Platform.ios, Macapi.ObjectiveC, iOSapi.UIKit,
+  Macapi.Helpers,
+  //下面的单元是微信 SDK 需要额外引入的单元
   System.ZLib {libz.dylib} , System.Sqlite {libsqlite3.0.dylib} ,
-  iOSapi.Foundation, Macapi.ObjectiveC, iOSapi.UIKit, Macapi.Helpers,
-  iOSapi.Foundation, FMX.Platform.ios;
+  iOSapi.CFNetwork, iOSapi.SCNetworkReachability, iOSapi.Security;
 
 type
   BaseReq = interface;
