@@ -9,11 +9,9 @@ unit QSDK.Wechat.ios;
 interface
 
 uses
-  iOSapi.Foundation, FMX.Platform.ios, Macapi.ObjectiveC, iOSapi.UIKit,
-  Macapi.Helpers,
-  //下面的单元是微信 SDK 需要额外引入的单元
   System.ZLib {libz.dylib} , System.Sqlite {libsqlite3.0.dylib} ,
-  iOSapi.CFNetwork, iOSapi.SCNetworkReachability, iOSapi.Security;
+  iOSapi.Foundation, Macapi.ObjectiveC, iOSapi.UIKit, Macapi.Helpers,
+  iOSapi.Foundation, FMX.Platform.ios;
 
 type
   BaseReq = interface;
@@ -780,6 +778,7 @@ const
 
 implementation
 
+uses QSDK.Wechat;
 {$IFDEF CPUARM}
 {$O-}
 function WXApi_FakeLoader: WXApi; cdecl;
