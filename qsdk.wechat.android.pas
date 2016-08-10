@@ -3731,11 +3731,11 @@ procedure RegisterWechatService;
 
 implementation
 
-uses fmx.platform, AndroidAPI.Helpers, qsdk.wechat;
+uses system.classes, system.sysutils, fmx.platform, system.Diagnostics,
+  AndroidAPI.Helpers, qsdk.wechat;
 
 type
-  TAndroidWechatService = class(TInterfacedObject, IWechatService,
-    JIWXAPIEventHandler)
+  TAndroidWechatService = class(TJavaLocal, IWechatService, JIWXAPIEventHandler)
   private
     FInstance: JIWXAPI;
     FAppId: String;
@@ -3759,6 +3759,35 @@ type
     function getOnResponse: TWechatResponseEvent;
     procedure setOnResponse(const AEvent: TWechatResponseEvent);
     procedure setAppId(const AId: String);
+    function OpenUrl(const aurl: String): Boolean;
+    function SendText(const atext: String; ASession: TWechatSession): Boolean;
+    function CreateObject(AObjId: TGuid): IWechatObject;
+  end;
+
+  TAndroidWechatBaseRequest = class(TWechatObject, IWechatRequest)
+  protected
+    FInstance: JBaseReq;
+    function getOpenID: String;
+    procedure setOpenID(const AValue: String);
+    function getTansaction: String;
+    procedure setTransaction(const AValue: String);
+    function GetRequest: JBaseReq;
+    function CreateRequest: JBaseReq; virtual;
+  public
+    constructor Create; overload;
+    function QueryInterface(const IID: TGuid; out Obj): HResult;
+      override; stdcall;
+    property Request: JBaseReq read GetRequest;
+  end;
+
+  TAndroidWechatOpenUrlRequest = class(TAndroidWechatBaseRequest)
+  private
+    function GetUrl: String;
+    procedure SetUrl(const Value: String);
+  protected
+    function CreateRequest: JBaseReq; override;
+  public
+    property url: String read GetUrl write SetUrl;
   end;
 
 procedure RegisterWechatService;
@@ -3964,6 +3993,12 @@ begin
   inherited;
 end;
 
+function TAndroidWechatService.CreateObject(AObjId: TGuid): IWechatObject;
+begin
+  if AObjId = IWechatRequest then
+    result := TAndroidWechatBaseRequest.Create;
+end;
+
 function TAndroidWechatService.getAppId: String;
 begin
   result := FAppId;
@@ -3992,19 +4027,29 @@ end;
 procedure TAndroidWechatService.onReq(P1: JBaseReq);
 var
   AReq: IWechatRequest;
+  ATypeId: Integer;
 begin
   if Assigned(FOnRequest) then
   begin
-    AReq.openId := JStringToString(P1.openId);
-    AReq.transaction := JStringToString(P1.transaction);
-    AReq.RequestType := P1.getType;
-    FOnRequest(@AReq);
+    ATypeId := P1.getType;
+    // case ATypeId of
+    //
+    // end;
   end;
 end;
 
 procedure TAndroidWechatService.onResp(P1: JBaseResp);
 begin
 
+end;
+
+function TAndroidWechatService.OpenUrl(const aurl: String): Boolean;
+var
+  AReq: TAndroidWechatOpenUrlRequest;
+begin
+  AReq := TAndroidWechatOpenUrlRequest.Create;
+  AReq.url := aurl;
+  result := SendRequest(AReq);
 end;
 
 function TAndroidWechatService.OpenWechat: Boolean;
@@ -4025,14 +4070,46 @@ begin
   result := Assigned(FInstance);
 end;
 
-function TAndroidWechatService.SendRequest(ARequest: PWechatRequest): Boolean;
+function TAndroidWechatService.SendRequest(ARequest: IWechatRequest): Boolean;
 begin
-  // Todo:
+  result := Registered and FInstance.sendReq(ARequest as JBaseReq);
 end;
 
-function TAndroidWechatService.SendResponse(AResp: PWechatResponse): Boolean;
+function TAndroidWechatService.SendResponse(AResp: IWechatResponse): Boolean;
 begin
-  // Todo
+  result := Registered and FInstance.sendResp(AResp as JBaseResp);
+end;
+
+function TAndroidWechatService.SendText(const atext: String;
+  ASession: TWechatSession): Boolean;
+var
+  ATextObj: JWXTextObject;
+  AMsg: JWXMediaMessage;
+  AReq: JSendMessageToWX_Req;
+begin
+  if Registered then
+  begin
+    ATextObj := TJWXTextObject.JavaClass.init;
+    ATextObj.text := StringToJString(atext);
+    AMsg := TJWXMediaMessage.JavaClass.init;
+    AMsg.mediaObject := TJWXMediaMessage_IMediaObject.Wrap
+      ((ATextObj as ILocalObject).GetObjectID);
+    AMsg.description := ATextObj.text;
+    AReq := TJSendMessageToWX_Req.JavaClass.init;
+    AReq.transaction := StringToJString(IntToStr(TStopWatch.GetTimeStamp));
+    AReq.message := AMsg;
+    case ASession of
+      TWechatSession.Session:
+        AReq.scene := TJSendMessageToWX_Req.JavaClass.WXSceneSession;
+      TWechatSession.Timeline:
+        AReq.scene := TJSendMessageToWX_Req.JavaClass.WXSceneTimeline;
+      TWechatSession.Favorite:
+        AReq.scene := TJSendMessageToWX_Req.JavaClass.WXSceneFavorite;
+    end;
+    result := FInstance.sendReq(AReq);
+  end
+  else
+    result := false;
 end;
 
 procedure TAndroidWechatService.setAppId(const AId: String);
@@ -4063,6 +4140,75 @@ begin
     FInstance.unregisterApp;
     FInstance := nil;
   end;
+end;
+
+{ TAndroidWechatBaseRequest }
+
+constructor TAndroidWechatBaseRequest.Create;
+begin
+  inherited;
+end;
+
+function TAndroidWechatBaseRequest.CreateRequest: JBaseReq;
+begin
+  result := TJBaseReq.JavaClass.init;
+end;
+
+function TAndroidWechatBaseRequest.getOpenID: String;
+begin
+  result := JStringToString(Request.openId);
+end;
+
+function TAndroidWechatBaseRequest.getTansaction: String;
+begin
+  result := JStringToString(Request.transaction);
+end;
+
+function TAndroidWechatBaseRequest.QueryInterface(const IID: TGuid;
+  out Obj): HResult;
+begin
+  if not Supports(Request, IID, Obj) then
+    result := inherited
+  else
+    result := S_OK;
+end;
+
+function TAndroidWechatBaseRequest.GetRequest: JBaseReq;
+begin
+  if not Assigned(FInstance) then
+  begin
+    FInstance := CreateRequest;
+    // 使用当前时间创建一个默认的会话ID
+    FInstance.transaction := StringToJString(IntToStr(TStopWatch.GetTimeStamp));
+  end;
+  result := FInstance;
+end;
+
+procedure TAndroidWechatBaseRequest.setOpenID(const AValue: String);
+begin
+  Request.openId := StringToJString(AValue);
+end;
+
+procedure TAndroidWechatBaseRequest.setTransaction(const AValue: String);
+begin
+  Request.transaction := StringToJString(AValue);
+end;
+
+{ TAndroidWechatOpenUrlRequest }
+
+function TAndroidWechatOpenUrlRequest.CreateRequest: JBaseReq;
+begin
+  result := TJOpenWebview_Req.JavaClass.init;
+end;
+
+function TAndroidWechatOpenUrlRequest.GetUrl: String;
+begin
+  result := JStringToString((Request as JOpenWebview_Req).url);
+end;
+
+procedure TAndroidWechatOpenUrlRequest.SetUrl(const Value: String);
+begin
+  (Request as JOpenWebview_Req).url := StringToJString(Value);
 end;
 
 initialization
