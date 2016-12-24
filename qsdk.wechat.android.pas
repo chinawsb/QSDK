@@ -12,6 +12,7 @@ uses AndroidAPI.JNIBridge, AndroidAPI.JNI.JavaTypes,
   AndroidAPI.JNI.App, AndroidAPI.JNI.Util;
 
 type
+  JWXPayEntryActivity = interface; //
   JBuild = interface; // com.tencent.mm.sdk.constants.Build
   JConstantsAPI_Token = interface;
   // com.tencent.mm.sdk.constants.ConstantsAPI$Token
@@ -3727,24 +3728,103 @@ type
     JStatSpecifyReportedInfo>)
   end;
 
+  JWXPayEntryActivityClass = interface(JActivityClass)
+    // or JObjectClass // SuperSignature: android/app/Activity
+    ['{36F4681B-72E4-423E-86DC-DDD1DEE7BC3D}']
+    { static Property Methods }
+
+    { static Methods }
+    { class } function init: JWXPayEntryActivity; cdecl; // ()V
+
+    { class } procedure setWxAPI(P1: JIWXAPI); cdecl;
+    // (Lcom/tencent/mm/sdk/openapi/IWXAPI;)V
+    { class } function getWxAPI: JIWXAPI; cdecl;
+    // ()Lcom/tencent/mm/sdk/openapi/IWXAPI;
+    { class } procedure setWXEventHandler(P1: JIWXAPIEventHandler); cdecl;
+    // (Lcom/tencent/mm/sdk/openapi/IWXAPIEventHandler;)V
+    { class } function getWXEventHandler: JIWXAPIEventHandler; cdecl;
+    // ()Lcom/tencent/mm/sdk/openapi/IWXAPIEventHandler;
+
+    { static Property }
+    property WxAPI: JIWXAPI read getWxAPI write setWxAPI;
+    property WXEventHandler: JIWXAPIEventHandler read getWXEventHandler
+      write setWXEventHandler;
+  end;
+
+  [JavaSignature('com/jlgoldenbay/ddb/wxapi/WXPayEntryActivity')]
+  JWXPayEntryActivity = interface(JActivity)
+    // or JObject // SuperSignature: android/app/Activity
+    ['{0011B21A-C602-4435-8F87-241B8968AC64}']
+    { Property Methods }
+
+    { methods }
+    procedure onCreate(savedInstanceState: JBundle); cdecl;
+    // (Landroid/os/Bundle;)V
+    procedure onReq(req: JBaseReq); cdecl;
+    // (Lcom/tencent/mm/sdk/modelbase/BaseReq;)V
+    procedure onResp(resp: JBaseResp); cdecl;
+    // (Lcom/tencent/mm/sdk/modelbase/BaseResp;)V
+
+    { Property }
+  end;
+
+  TJWXPayEntryActivity = class(TJavaGenericImport<JWXPayEntryActivityClass,
+    JWXPayEntryActivity>)
+  end;
+
 procedure RegisterWechatService;
 
 implementation
 
-uses system.classes, system.sysutils, fmx.platform, system.Diagnostics,
-  AndroidAPI.Helpers, qsdk.wechat;
+uses system.classes, system.sysutils, system.Generics.Collections, fmx.platform,
+  system.Diagnostics,
+  Dateutils,
+  AndroidAPI.Helpers, system.Net.HttpClient, qstring, qxml, qjson, qdigest,
+  qsdk.wechat;
 
 type
+  TWechatResponse = class(TInterfacedObject, IWechatResponse)
+  private
+    FErrorMsg: String;
+    FType, FErrorCode: Integer;
+    function getErrorCode: Integer;
+    procedure setErrorCode(const acode: Integer);
+    function getErrorMsg: String;
+    function getRespType: Integer;
+    procedure setErrorMsg(const AValue: String);
+    property ErrorCode: Integer read getErrorCode write setErrorCode;
+    property ErrorMsg: String read getErrorMsg write setErrorMsg;
+  public
+    constructor Create(AResp: JBaseResp);
+  end;
+
+  TWechatPayResponse = class(TWechatResponse, IWechatPayResponse)
+  private
+    FPrepayId, FReturnKey, FExtData: String;
+    function getPrepayId: String;
+    procedure setPrepayId(const AVal: String);
+    function getReturnKey: String;
+    procedure setReturnKey(const AVal: String);
+    function getExtData: String;
+    procedure setExtData(const AVal: String);
+  public
+    constructor Create(AResp: JPayResp);
+  end;
+
   TAndroidWechatService = class(TJavaLocal, IWechatService, JIWXAPIEventHandler)
   private
     FInstance: JIWXAPI;
     FAppId: String;
+    FMchId: String;
+    FDevId: String;
+    FPayKey: String;
+    FLastErrorMsg: String;
+    FLastError: Integer;
     FRegistered: Boolean;
     FOnRequest: TWechatRequestEvent;
     FOnResponse: TWechatResponseEvent;
+    FPayActivity: JActivity;
     function Registered: Boolean;
-    procedure onReq(P1: JBaseReq); cdecl;
-    procedure onResp(P1: JBaseResp); cdecl;
   public
     constructor Create; overload;
     procedure Unregister;
@@ -3762,6 +3842,16 @@ type
     function OpenUrl(const aurl: String): Boolean;
     function SendText(const atext: String; ASession: TWechatSession): Boolean;
     function CreateObject(AObjId: TGuid): IWechatObject;
+    function getMchId: String;
+    procedure setMchId(const AId: String);
+    function getDevId: String;
+    procedure setDevId(const AId: String);
+    function Pay(aprepayId, anonceStr, asign: String;
+      atimeStamp: Integer): Boolean;
+    function getPayKey: String;
+    procedure setPayKey(const AKey: String);
+    procedure onReq(P1: JBaseReq); cdecl;
+    procedure onResp(P1: JBaseResp); cdecl;
   end;
 
   TAndroidWechatBaseRequest = class(TWechatObject, IWechatRequest)
@@ -3789,6 +3879,32 @@ type
   public
     property url: String read GetUrl write SetUrl;
   end;
+
+  TAndroidActivityLifecycleManager = class(TJavaLocal,
+    JApplication_ActivityLifecycleCallbacks)
+  private
+    function GetTopActivity: JActivity;
+  protected
+    FActivityList: TList<Pointer>;
+    [weaked]
+    FTopActivity: JActivity;
+  public
+    constructor Create; overload;
+    destructor Destroy; override;
+    procedure onActivityCreated(activity: JActivity;
+      savedInstanceState: JBundle); cdecl;
+    procedure onActivityDestroyed(activity: JActivity); cdecl;
+    procedure onActivityPaused(activity: JActivity); cdecl;
+    procedure onActivityResumed(activity: JActivity); cdecl;
+    procedure onActivitySaveInstanceState(activity: JActivity;
+      outState: JBundle); cdecl;
+    procedure onActivityStarted(activity: JActivity); cdecl;
+    procedure onActivityStopped(activity: JActivity); cdecl;
+    property TopActivity: JActivity read FTopActivity;
+  end;
+
+var
+  LifecycleManager: TAndroidActivityLifecycleManager = nil;
 
 procedure RegisterWechatService;
 begin
@@ -3984,6 +4100,8 @@ begin
     TypeInfo(qsdk.wechat.android.JStatServiceImpl));
   TRegTypes.RegisterType('QSDK.Wechat.Android.JStatSpecifyReportedInfo',
     TypeInfo(qsdk.wechat.android.JStatSpecifyReportedInfo));
+  TRegTypes.RegisterType('Androidapi.JNI.wxpay.JWXPayEntryActivity',
+    TypeInfo(qsdk.wechat.android.JWXPayEntryActivity));
 end;
 
 { TAndroidWechatService }
@@ -3991,6 +4109,9 @@ end;
 constructor TAndroidWechatService.Create;
 begin
   inherited;
+  FDevId := 'APP';
+  FPayActivity := TJWXPayEntryActivity.JavaClass.init;
+  FPayActivity.setVisible(false);
 end;
 
 function TAndroidWechatService.CreateObject(AObjId: TGuid): IWechatObject;
@@ -4004,6 +4125,16 @@ begin
   result := FAppId;
 end;
 
+function TAndroidWechatService.getDevId: String;
+begin
+  result := FDevId;
+end;
+
+function TAndroidWechatService.getMchId: String;
+begin
+  result := FMchId;
+end;
+
 function TAndroidWechatService.getOnRequest: TWechatRequestEvent;
 begin
   result := FOnRequest;
@@ -4012,6 +4143,11 @@ end;
 function TAndroidWechatService.getOnResponse: TWechatResponseEvent;
 begin
   result := FOnResponse;
+end;
+
+function TAndroidWechatService.getPayKey: String;
+begin
+  result := FPayKey;
 end;
 
 function TAndroidWechatService.IsAPISupported: Boolean;
@@ -4028,6 +4164,7 @@ procedure TAndroidWechatService.onReq(P1: JBaseReq);
 var
   AReq: IWechatRequest;
   ATypeId: Integer;
+  AXML: TQXML;
 begin
   if Assigned(FOnRequest) then
   begin
@@ -4039,8 +4176,17 @@ begin
 end;
 
 procedure TAndroidWechatService.onResp(P1: JBaseResp);
+var
+  APayResp: JPayResp;
+  AResp: IWechatResponse;
 begin
-
+  if Assigned(FOnResponse) then
+  begin
+    if Supports(P1, JPayResp, APayResp) then
+      FOnResponse(TWechatPayResponse.Create(APayResp))
+    else
+      FOnResponse(TWechatResponse.Create(P1));
+  end;
 end;
 
 function TAndroidWechatService.OpenUrl(const aurl: String): Boolean;
@@ -4057,6 +4203,26 @@ begin
   result := Registered and FInstance.openWXApp;
 end;
 
+function TAndroidWechatService.Pay(aprepayId, anonceStr, asign: String;
+  atimeStamp: Integer): Boolean;
+const
+  PrepayUrl = 'https://api.mch.weixin.qq.com/pay/unifiedorder';
+var
+  AReq: JPayReq;
+begin
+  AReq := TJPayReq.JavaClass.init;
+  AReq.appId := StringToJString(FAppId);
+  AReq.partnerId := StringToJString(FMchId);
+  AReq.prepayId := StringToJString(aprepayId);
+  AReq.packageValue := StringToJString('Sign=WXPay');
+  AReq.nonceStr := StringToJString(anonceStr);
+  AReq.timeStamp := StringToJString(IntToStr(atimeStamp));
+  AReq.sign := StringToJString(asign);
+  DebugOut('WXPay Start with PrepayId %s,NonceStr %s,Timestamp %d ,Sign %s',
+    [aprepayId, anonceStr, atimeStamp, asign]);
+  result := Registered and FInstance.sendReq(AReq as JBaseReq);
+end;
+
 function TAndroidWechatService.Registered: Boolean;
 begin
   if not Assigned(FInstance) then
@@ -4065,6 +4231,9 @@ begin
     begin
       FInstance := TJWXAPIFactory.JavaClass.createWXAPI(TAndroidHelper.Context,
         StringToJString(FAppId));
+      FInstance.registerApp(StringToJString(FAppId));
+      TJWXPayEntryActivity.JavaClass.WxAPI := FInstance;
+      TJWXPayEntryActivity.JavaClass.WXEventHandler := Self;
     end;
   end;
   result := Assigned(FInstance);
@@ -4122,6 +4291,16 @@ begin
   end;
 end;
 
+procedure TAndroidWechatService.setDevId(const AId: String);
+begin
+  FDevId := AId;
+end;
+
+procedure TAndroidWechatService.setMchId(const AId: String);
+begin
+  FMchId := AId;
+end;
+
 procedure TAndroidWechatService.setOnRequest(const AEvent: TWechatRequestEvent);
 begin
   FOnRequest := AEvent;
@@ -4131,6 +4310,11 @@ procedure TAndroidWechatService.setOnResponse(const AEvent
   : TWechatResponseEvent);
 begin
   FOnResponse := AEvent;
+end;
+
+procedure TAndroidWechatService.setPayKey(const AKey: String);
+begin
+  FPayKey := AKey;
 end;
 
 procedure TAndroidWechatService.Unregister;
@@ -4211,8 +4395,177 @@ begin
   (Request as JOpenWebview_Req).url := StringToJString(Value);
 end;
 
+{ TWechatResponse }
+
+constructor TWechatResponse.Create(AResp: JBaseResp);
+begin
+  inherited Create;
+  FType := AResp.getType;
+  FErrorCode := AResp.errCode;
+  FErrorMsg := JStringToString(AResp.errStr);
+end;
+
+function TWechatResponse.getErrorCode: Integer;
+begin
+  result := FErrorCode;
+end;
+
+function TWechatResponse.getErrorMsg: String;
+begin
+  result := FErrorMsg;
+end;
+
+function TWechatResponse.getRespType: Integer;
+begin
+  result := FType;
+end;
+
+procedure TWechatResponse.setErrorCode(const acode: Integer);
+begin
+  FErrorCode := acode;
+end;
+
+procedure TWechatResponse.setErrorMsg(const AValue: String);
+begin
+  FErrorMsg := AValue;
+end;
+
+{ TAndroidActivityLifecycleManager }
+
+constructor TAndroidActivityLifecycleManager.Create;
+begin
+  inherited;
+  FActivityList := TList<Pointer>.Create;
+  TAndroidHelper.activity.getApplication.
+    registerActivityLifecycleCallbacks(Self);
+end;
+
+destructor TAndroidActivityLifecycleManager.Destroy;
+begin
+  FreeObject(FActivityList);
+  inherited;
+end;
+
+function TAndroidActivityLifecycleManager.GetTopActivity: JActivity;
+begin
+  // if FActivityList.Count > 0 then
+  // result := JActivity(FActivityList.Items[FActivityList.Count - 1])
+  // else
+  result := nil;
+end;
+
+procedure TAndroidActivityLifecycleManager.onActivityCreated
+  (activity: JActivity; savedInstanceState: JBundle);
+begin
+
+end;
+
+procedure TAndroidActivityLifecycleManager.onActivityDestroyed
+  (activity: JActivity);
+begin
+  DebugOut('ActivityLifecyle:Activity %s destroy',
+    [JStringToString(activity.getClass.getName)]);
+  FActivityList.remove(Pointer(activity));
+end;
+
+procedure TAndroidActivityLifecycleManager.onActivityPaused
+  (activity: JActivity);
+begin
+
+end;
+
+procedure TAndroidActivityLifecycleManager.onActivityResumed
+  (activity: JActivity);
+var
+  AIdx: Integer;
+begin
+  FTopActivity := activity;
+  DebugOut('ActivityLifecyle:Activity %s bring to front',
+    [JStringToString(activity.getClass.getName)]);
+  AIdx := FActivityList.IndexOf(Pointer(activity));
+  if AIdx = -1 then
+    FActivityList.Add(Pointer(activity))
+  else if AIdx <> FActivityList.Count - 1 then
+    FActivityList.Move(AIdx, FActivityList.Count - 1);
+end;
+
+procedure TAndroidActivityLifecycleManager.onActivitySaveInstanceState
+  (activity: JActivity; outState: JBundle);
+begin
+
+end;
+
+procedure TAndroidActivityLifecycleManager.onActivityStarted
+  (activity: JActivity);
+begin
+
+end;
+
+procedure TAndroidActivityLifecycleManager.onActivityStopped
+  (activity: JActivity);
+begin
+
+end;
+
+procedure UnregisterLifecycleManager;
+var
+  AppContent: JApplication;
+begin
+  if Assigned(LifecycleManager) then
+  begin
+    AppContent := TAndroidHelper.activity.getApplication;
+    AppContent.unregisterActivityLifecycleCallbacks(LifecycleManager);
+    LifecycleManager := nil;
+  end;
+end;
+
+{ TWechatPayResponse }
+
+constructor TWechatPayResponse.Create(AResp: JPayResp);
+begin
+  inherited Create(AResp);
+  FPrepayId := JStringToString(AResp.prepayId);
+  FReturnKey := JStringToString(AResp.returnKey);
+  FExtData := JStringToString(AResp.extData);
+end;
+
+function TWechatPayResponse.getExtData: String;
+begin
+  result := FExtData;
+end;
+
+function TWechatPayResponse.getPrepayId: String;
+begin
+  result := FPrepayId;
+end;
+
+function TWechatPayResponse.getReturnKey: String;
+begin
+  result := FReturnKey;
+end;
+
+procedure TWechatPayResponse.setExtData(const AVal: String);
+begin
+  FExtData := AVal;
+end;
+
+procedure TWechatPayResponse.setPrepayId(const AVal: String);
+begin
+  FPrepayId := AVal;
+end;
+
+procedure TWechatPayResponse.setReturnKey(const AVal: String);
+begin
+  FReturnKey := AVal;
+end;
+
 initialization
 
 RegisterTypes;
+LifecycleManager := TAndroidActivityLifecycleManager.Create;
+
+finalization
+
+UnregisterLifecycleManager;
 
 end.
